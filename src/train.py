@@ -14,7 +14,7 @@ from sklearn.metrics import confusion_matrix
 # Config
 DATA_PATH = 'data/dataset.csv'
 MODEL_PATH = 'models/random_forest_model.joblib'
-METRICS_PATH = 'models/metrics.json'
+METRICS_PATH = 'results/metrics.json'
 TEST_SIZE = 0.3
 RANDOM_STATE = 42
 

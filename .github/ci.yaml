@@ -1,0 +1,71 @@
+name: Continuous Integration (CI)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  ci_build_and_test:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+    - name: 1. Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 
+        
+    - name: 2. Setup Python Environment
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        
+    - name: 3. Install Dependencies
+      run: make install
+
+
+    - name: 4. Run Training and Evaluation
+      run: make train
+      
+    - name: 5. Check Artifacts Exist
+      run: |
+        echo "Verifying if model and metrics files were created..."
+        test -f models/model.pkl || { echo "Error: models/model.pkl not found!"; exit 1; }
+        test -f results/metrics.json || { echo "Error: results/metrics.json not found!"; exit 1; }
+        echo "Artifacts verified."
+
+
+    - name: 6. Publish Model Metrics to PR/Commit
+      uses: iterative/cml@v2
+      # We install jq here to parse the metrics.json file
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Check if jq is installed, install if not
+        if ! command -v jq &> /dev/null; then
+          sudo apt-get update && sudo apt-get install -y jq
+        fi
+        
+        # Read metrics from the detailed classification report
+        ACCURACY=$(cat results/metrics.json | jq -r '.accuracy.precision')
+        F1_SCORE=$(cat results/metrics.json | jq -r '."weighted avg"."f1-score"')
+        
+        # Format the markdown report
+        cat << EOF > report.md
+        ## 📊 CI Model Run Report
+        
+        | Metric | Value |
+        | :--- | :--- |
+        | Overall Accuracy | \`$ACCURACY\` |
+        | Weighted F1-Score | \`$F1_SCORE\` |
+        
+        *This model passed the functional tests and generated new metrics.*
+        EOF
+        
+        # Publish the report to the Pull Request or Commit
+        cml comment create report.md
