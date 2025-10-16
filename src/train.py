@@ -8,12 +8,14 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import confusion_matrix
+
 
 # Config
 DATA_PATH = 'data/dataset.csv'
 MODEL_PATH = 'models/random_forest_model.joblib'
 METRICS_PATH = 'models/metrics.json'
-TEST_SIZE = 0.2
+TEST_SIZE = 0.3
 RANDOM_STATE = 42
 
 # Ensure directories exist
@@ -52,7 +54,7 @@ def train_and_evaluate():
     # Split data
     print("Splitting data into training and testing sets...")
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y)
 
     print(f"Training set shape: {X_train.shape}, Testing set shape: {X_test.shape}")
 
@@ -87,7 +89,12 @@ def train_and_evaluate():
 
     # print classification report
     print(class_report_str)
-
+    
+    # Print confusion matrix]
+    conf_matrix = confusion_matrix(y_test, y_pred)
+    print("Confusion Matrix:")
+    print(conf_matrix)
+  
     # Save results
     print("Saving model and metrics...")
     joblib.dump(grid_search.best_estimator_, MODEL_PATH)
@@ -99,3 +106,7 @@ def train_and_evaluate():
 
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE)
+
+if __name__ == "__main__":
+    train_and_evaluate()
+    print("Training and evaluation process completed.")
