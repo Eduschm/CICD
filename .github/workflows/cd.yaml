@@ -1,0 +1,20 @@
+
+name: Publish Model Metrics
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  publish-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Generate Report
+        uses: iterative/cml@v2
+        with:
+          markdown: |
+            ## CI Run Report
+            Model Accuracy: $ (cat results/metrics.json | jq -r '.accuracy.precision')
+            Weighted F1-Score: $ (cat results/metrics.json | jq -r '."weighted avg"."f1-score"')
+            *New model artifact created and tested.*

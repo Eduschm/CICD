@@ -13,7 +13,7 @@ from sklearn.metrics import confusion_matrix
 
 # Config
 DATA_PATH = 'data/dataset.csv'
-MODEL_PATH = 'models/random_forest_model.joblib'
+MODEL_PATH = 'models/model.pkl'
 METRICS_PATH = 'results/metrics.json'
 TEST_SIZE = 0.3
 RANDOM_STATE = 42
@@ -97,15 +97,12 @@ def train_and_evaluate():
   
     # Save results
     print("Saving model and metrics...")
+    # Save the best model as pkl
     joblib.dump(grid_search.best_estimator_, MODEL_PATH)
+    print(f"Model saved to {MODEL_PATH}")
     json_metrics = classification_report(y_test, y_pred, output_dict=True)
     pd.DataFrame(json_metrics).to_json(METRICS_PATH)
 
-
-
-
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE)
 
 if __name__ == "__main__":
     train_and_evaluate()
