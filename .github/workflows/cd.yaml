@@ -11,10 +11,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Generate Report
-        uses: iterative/cml@2
+        uses: iterative/cml-action@v1
         with:
           markdown: |
             ## CI Run Report
-            Model Accuracy: $ (cat results/metrics.json | jq -r '.accuracy.precision')
-            Weighted F1-Score: $ (cat results/metrics.json | jq -r '."weighted avg"."f1-score"')
+            Model Accuracy: $(cat results/metrics.json | jq -r '.accuracy.precision')
+            Weighted F1-Score: $(cat results/metrics.json | jq -r '."weighted avg"."f1-score"')
             *New model artifact created and tested.*
