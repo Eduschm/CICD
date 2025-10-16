@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Generate Report
-        uses: iterative/cml@v2
+        uses: iterative/cml@0-9-0
         with:
           markdown: |
             ## CI Run Report

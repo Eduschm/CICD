@@ -41,8 +41,8 @@ jobs:
 
 
     - name: 6. Publish Model Metrics to PR/Commit
-      uses: iterative/cml@v2
-      # We install jq here to parse the metrics.json file
+      uses: iterative/cml@0-9-0
+
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
