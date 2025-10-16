@@ -41,7 +41,7 @@ jobs:
 
 
     - name: 6. Publish Model Metrics to PR/Commit
-      uses: iterative/cml@0-9-0
+      uses: iterative/cml@v2
 
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
