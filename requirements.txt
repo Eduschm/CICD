@@ -3,4 +3,4 @@ pandas
 scikit-learn
 joblib
 jq
-skops==0.7.1
+skops==0.13.0
