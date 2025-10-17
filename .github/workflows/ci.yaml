@@ -69,7 +69,6 @@ jobs:
         script: |
           const fs = require('fs');
           const report = fs.readFileSync('report.md', 'utf8');
-          const context = github.context;
           
           if (context.payload.pull_request) {
             await github.rest.issues.createComment({
