@@ -1,4 +1,3 @@
-
 name: Publish Model Metrics
 
 on:
@@ -8,13 +7,24 @@ on:
 jobs:
   publish-metrics:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
+    
+      - uses: iterative/setup-cml@v2
+      
+      
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
       - name: Generate Report
-        uses: iterative/cml@v1
-        with:
-          markdown: |
-            ## CI Run Report
-            Model Accuracy: $(cat results/metrics.json | jq -r '.accuracy.precision')
-            Weighted F1-Score: $(cat results/metrics.json | jq -r '."weighted avg"."f1-score"')
-            *New model artifact created and tested.*
+        run: |
+          echo "## CI Run Report" >> report.md
+          echo "Model Accuracy: $(jq -r '.accuracy.precision' results/metrics.json)" >> report.md
+          echo "Weighted F1-Score: $(jq -r '."weighted avg"."f1-score"' results/metrics.json)" >> report.md
+          echo "*New model artifact created and tested.*" >> report.md
+      - name: Publish Report
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cml comment create report.md
