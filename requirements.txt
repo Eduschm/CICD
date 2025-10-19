@@ -4,3 +4,5 @@ scikit-learn
 joblib
 jq
 skops==0.13.0
+seaborn
+xgboost
