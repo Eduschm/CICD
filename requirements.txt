@@ -6,3 +6,6 @@ jq
 skops==0.13.0
 seaborn
 xgboost
+shap
+imbalanced-learn
+reliefF
