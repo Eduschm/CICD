@@ -16,7 +16,9 @@ import xgboost as xgb
 import lightgbm as lgb
 from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import Pipeline as ImbPipeline
+
 import skops.io as skio
+import joblib
 
 
 class ChurnTrainer:
@@ -57,7 +59,9 @@ class ChurnTrainer:
         # placeholders for splits and objects
         self.X_train = self.X_test = self.y_train = self.y_test = None
         self.preprocessor = None
-        self.cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=self.random_state)
+        self.cv = StratifiedKFold(
+            n_splits=5, shuffle=True, random_state=self.random_state
+        )
 
         # pipelines and param grids
         self._build_preprocessor()
@@ -69,8 +73,9 @@ class ChurnTrainer:
         self.voting_classifier = None
         self.voting_threshold = None
 
-    def _build_preprocessor(self):
+    # Preprocessing
 
+    def _build_preprocessor(self):
         num_pipeline = Pipeline(
             [("impute", SimpleImputer(strategy="mean")), ("scale", StandardScaler())]
         )
@@ -89,8 +94,11 @@ class ChurnTrainer:
             remainder="drop",
         )
 
+
+    # Model pipelines & grids
+
     def _build_pipelines_and_grids(self):
-        # Pipelines
+        # Training pipelines (with SMOTE and ImbPipeline)
         self.pipelines = {
             "xgb": ImbPipeline(
                 [
@@ -123,7 +131,7 @@ class ChurnTrainer:
             ),
         }
 
-        # Param grids (kept similar to original)
+        # Param grids
         self.param_grids = {
             "xgb": {
                 "classifier__n_estimators": [100, 300],
@@ -155,12 +163,22 @@ class ChurnTrainer:
             },
         }
 
+ 
+    # Data split
+  
     def split(self):
         X = self.df.drop(self.target_col, axis=1)
         y = self.df[self.target_col].map({"No": 0, "Yes": 1}).astype(int)
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            X, y, test_size=self.test_size, random_state=self.random_state, stratify=y
+            X,
+            y,
+            test_size=self.test_size,
+            random_state=self.random_state,
+            stratify=y,
         )
+
+ 
+    # Training
 
     def _run_grid_search(
         self, name: str, scoring=None, refit: str = "f1", n_jobs: int = -1, verbose: int = 1
@@ -170,7 +188,8 @@ class ChurnTrainer:
             pipeline,
             self.param_grids[name],
             cv=self.cv,
-            scoring=scoring or ["recall", "roc_auc", "f1", "accuracy", "precision"],
+            scoring=scoring
+            or ["recall", "roc_auc", "f1", "accuracy", "precision"],
             n_jobs=n_jobs,
             refit=refit,
             verbose=verbose,
@@ -180,6 +199,9 @@ class ChurnTrainer:
         # convert params to JSON-serializable strings
         self.best_params[name] = {k: str(v) for k, v in grid.best_params_.items()}
         return grid
+
+
+    # Evaluation
 
     def evaluate(self, name: str):
         model = self.best_models.get(name)
@@ -193,20 +215,95 @@ class ChurnTrainer:
         print("\nConfusion Matrix:")
         print(confusion_matrix(self.y_test, y_pred))
 
-    def save_model(self, name: str, filename: Optional[str] = None):
+
+    # Deployment-ready saving
+
+    def _get_fitted_components(self, name: str):
+        """
+        Helper: Returns fitted (preprocessor, classifier) from the best model pipeline.
+        Assumes self.best_models[name] is an ImbPipeline with steps:
+        preprocessor -> smote -> classifier
+        """
         model = self.best_models.get(name)
         if model is None:
             raise ValueError(f"No trained model found for '{name}'")
-        filename = filename or f"{name}_model.skops"
+
+        preprocessor = model.named_steps["preprocessor"]
+        classifier = model.named_steps["classifier"]
+        return preprocessor, classifier
+
+    def save_dt_model(self, filename: str = "model_dt.skops"):
+        """
+        Save a pure sklearn deployment pipeline (preprocessor + DecisionTreeClassifier)
+        using skops (safe format).
+        """
+        preprocessor, classifier = self._get_fitted_components("dt")
+
+        # Deployment pipeline (no SMOTE, no ImbPipeline)
+        deployment_pipeline = Pipeline(
+            [
+                ("preprocessor", preprocessor),
+                ("classifier", classifier),
+            ]
+        )
+
         path = os.path.join(self.model_dir, filename)
-        skio.dump(model, path)
+        skio.dump(deployment_pipeline, path)
+        print(f"Decision Tree deployment model saved to: {path}")
         return path
+
+    def save_xgb_model(
+        self,
+        model_filename: str = "model_xgb.json",
+        preprocessor_filename: str = "preprocessor_xgb.skops",
+    ):
+        """
+        Save XGBoost model in its native format + preprocessor separately via skops.
+        This avoids putting XGBoost inside skops (which causes 'untrusted types' errors).
+        """
+        preprocessor, classifier = self._get_fitted_components("xgb")
+
+        # Save preprocessor (sklearn only, safe)
+        preproc_path = os.path.join(self.model_dir, preprocessor_filename)
+        skio.dump(preprocessor, preproc_path)
+
+        # Save XGBoost model nativo
+        model_path = os.path.join(self.model_dir, model_filename)
+        classifier.save_model(model_path)
+
+        print(f"XGBoost preprocessor saved to: {preproc_path}")
+        print(f"XGBoost model saved to: {model_path}")
+        return {"preprocessor": preproc_path, "model": model_path}
+
+    def save_lgbm_model(
+        self,
+        model_filename: str = "model_lgbm.txt",
+        preprocessor_filename: str = "preprocessor_lgbm.skops",
+    ):
+        """
+        Save LightGBM model in its native format + preprocessor separately via skops.
+        """
+        preprocessor, classifier = self._get_fitted_components("lgbm")
+
+        # Save preprocessor
+        preproc_path = os.path.join(self.model_dir, preprocessor_filename)
+        skio.dump(preprocessor, preproc_path)
+
+        # Save LightGBM model nativo
+        model_path = os.path.join(self.model_dir, model_filename)
+        classifier.booster_.save_model(model_path)
+
+        print(f"LightGBM preprocessor saved to: {preproc_path}")
+        print(f"LightGBM model saved to: {model_path}")
+        return {"preprocessor": preproc_path, "model": model_path}
 
     def save_all_params(self):
         path = os.path.join(self.results_dir, "best_params.json")
         with open(path, "w") as f:
             json.dump(self.best_params, f, indent=2)
         return path
+
+    # Voting classifier
 
     def build_voting_classifier(self, max_fpr: float = 0.1):
         """Build and train a voting classifier from the best individual models."""
@@ -222,7 +319,7 @@ class ChurnTrainer:
         print("Building Voting Classifier (PREFERRED MODEL)...")
         print("=" * 60)
 
-        # Create voting classifier with soft voting
+        # Soft voting over the best pipelines
         self.voting_classifier = VotingClassifier(
             estimators=[
                 ("xgb", self.best_models["xgb"]),
@@ -246,15 +343,25 @@ class ChurnTrainer:
 
         # Calculate optimal threshold for max FPR
         voting_pred_proba = self.voting_classifier.predict_proba(self.X_test)[:, 1]
-        fpr_voting, tpr_voting, thresholds = roc_curve(self.y_test, voting_pred_proba)
+        fpr_voting, tpr_voting, thresholds = roc_curve(
+            self.y_test, voting_pred_proba
+        )
 
         # Find threshold for max FPR
-        threshold_index = next((i for i, fpr in enumerate(fpr_voting) if fpr > max_fpr), len(fpr_voting) - 1)
+        threshold_index = next(
+            (i for i, fpr in enumerate(fpr_voting) if fpr > max_fpr),
+            len(fpr_voting) - 1,
+        )
         self.voting_threshold = thresholds[threshold_index]
-        print(f"\nVoting Classifier Threshold for Max FPR {max_fpr}: {self.voting_threshold:.4f}")
+        print(
+            f"\nVoting Classifier Threshold for Max FPR {max_fpr}: "
+            f"{self.voting_threshold:.4f}"
+        )
 
         # Evaluate with threshold
-        y_pred_voting_thresholded = (voting_pred_proba >= self.voting_threshold).astype(int)
+        y_pred_voting_thresholded = (
+            voting_pred_proba >= self.voting_threshold
+        ).astype(int)
         print("\nClassification Report with Thresholding:")
         print(classification_report(self.y_test, y_pred_voting_thresholded))
         print("\nConfusion Matrix with Thresholding:")
@@ -263,30 +370,39 @@ class ChurnTrainer:
         # Save voting classifier as the preferred model
         self.save_voting_classifier()
 
-    def save_voting_classifier(self, filename: str = "model.skops"):
-        """Save the voting classifier as the preferred model."""
+    def save_voting_classifier(self, filename: str = "voting_model.pkl"):
+        """
+        Save the voting classifier using joblib (not skops),
+        because it contains XGBoost, LightGBM and ImbPipelines.
+        """
         if self.voting_classifier is None:
-            raise ValueError("Voting classifier has not been built yet. Run build_voting_classifier() first.")
-        
+            raise ValueError(
+                "Voting classifier has not been built yet. "
+                "Run build_voting_classifier() first."
+            )
+
         path = os.path.join(self.model_dir, filename)
-        skio.dump(self.voting_classifier, path)
+        joblib.dump(self.voting_classifier, path)
         print(f"\nPreferred model (Voting Classifier) saved to: {path}")
-        
+
         # Also save the threshold
         threshold_path = os.path.join(self.results_dir, "voting_threshold.json")
         with open(threshold_path, "w") as f:
             json.dump({"threshold": float(self.voting_threshold)}, f, indent=2)
         print(f"Voting threshold saved to: {threshold_path}")
-        
+
         return path
 
+
+    # Orchestrator
+
     def run_all(
-        self, 
-        train_xgb: bool = True, 
-        train_lgbm: bool = True, 
+        self,
+        train_xgb: bool = True,
+        train_lgbm: bool = True,
         train_dt: bool = True,
         build_voting: bool = True,
-        max_fpr: float = 0.1
+        max_fpr: float = 0.1,
     ):
         # prepare splits
         self.split()
@@ -295,41 +411,44 @@ class ChurnTrainer:
             print("\n" + "=" * 60)
             print("Training XGBoost...")
             print("=" * 60)
-            grid_xgb = self._run_grid_search("xgb", scoring=["recall", "roc_auc", "f1", "accuracy", "precision"])
+            _ = self._run_grid_search(
+                "xgb",
+                scoring=["recall", "roc_auc", "f1", "accuracy", "precision"],
+            )
             self.evaluate("xgb")
-            self.save_model("xgb", "model_xgb.skops")
+            self.save_xgb_model()
 
         if train_dt:
             print("\n" + "=" * 60)
             print("Training Decision Tree...")
             print("=" * 60)
-            grid_dt = self._run_grid_search("dt", scoring=["recall", "roc_auc", "f1"])
+            _ = self._run_grid_search(
+                "dt", scoring=["recall", "roc_auc", "f1"]
+            )
             self.evaluate("dt")
-            self.save_model("dt", "model_dt.skops")
+            self.save_dt_model()
 
         if train_lgbm:
             print("\n" + "=" * 60)
             print("Training LightGBM...")
             print("=" * 60)
-            grid_lgbm = self._run_grid_search("lgbm", scoring=["recall", "roc_auc", "f1"])
+            _ = self._run_grid_search(
+                "lgbm", scoring=["recall", "roc_auc", "f1"]
+            )
             self.evaluate("lgbm")
-            self.save_model("lgbm", "model_lgbm.skops")
+            self.save_lgbm_model()
 
         # Build voting classifier if requested
         if build_voting and all([train_xgb, train_lgbm, train_dt]):
             self.build_voting_classifier(max_fpr=max_fpr)
         elif build_voting:
-            print("\nWarning: All three models (xgb, lgbm, dt) must be trained to build voting classifier.")
+            print(
+                "\nWarning: All three models (xgb, lgbm, dt) must be trained "
+                "to build voting classifier."
+            )
 
         params_path = self.save_all_params()
         print(f"\nParameters saved to {params_path}")
         print("\nTraining complete!")
-        print(f"\n{'='*60}")
-        print("PREFERRED MODEL: Voting Classifier saved to models/model.skops")
-        print(f"{'='*60}")
-
-
-# Example usage:
-# df = pd.read_csv("data/churn_data.csv")
-# trainer = ChurnTrainer(df)
-# trainer.run_all()  # Trains all models and creates voting classifier
+        print(f"\n{'=' * 60}")
+        print(f"{'=' * 60}")
