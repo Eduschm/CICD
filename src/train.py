@@ -70,14 +70,14 @@ class ChurnTrainer:
         self.voting_threshold = None
 
     def _build_preprocessor(self):
-        # OneHotEncoder -> sparse=False to keep dense arrays (SMOTE requires dense)
+
         num_pipeline = Pipeline(
             [("impute", SimpleImputer(strategy="mean")), ("scale", StandardScaler())]
         )
         cat_pipeline = Pipeline(
             [
                 ("impute", SimpleImputer(strategy="constant", fill_value="missing")),
-                ("ohe", OneHotEncoder(handle_unknown="ignore", drop="first", sparse=False)),
+                ("ohe", OneHotEncoder(handle_unknown="ignore", drop="first")),
             ]
         )
 
