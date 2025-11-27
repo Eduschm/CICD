@@ -134,7 +134,8 @@ class ModelEvaluator:
         if plot_cm:
             self.plot_confusion_matrix(y, normalize=normalize_cm)
             plt.show()
-        metrics.to_json("metrics.json")
+        metrics.to_json("results/metrics.json")
+
         return metrics
 
 
@@ -144,6 +145,7 @@ if __name__ == "__main__":
     # create a simple test dataset and provide a fallback model if loading fails
     from sklearn.datasets import make_classification
     from sklearn.dummy import DummyClassifier
+    
     import warnings 
 
     warnings.filterwarnings("ignore")
