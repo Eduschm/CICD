@@ -40,13 +40,19 @@ class ModelEvaluator:
         self.y_pred: Optional[np.ndarray] = None
         self.y_proba: Optional[np.ndarray] = None
         self.metrics_df: Optional[pd.DataFrame] = None
+        self.trusted_types = [
+    "lightgbm.sklearn.LGBMClassifier",
+    "xgboost.sklearn.XGBClassifier",
+    "imblearn.pipeline.Pipeline",
+    "imblearn.over_sampling._smote.base.SMOTE",
+]
 
     def load_model(self):
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"Model file not found: {self.model_path}")
         if skops_io is None:
             raise RuntimeError("skops.io not available. Install scikit-learn-skbio/skops.")
-        self.model = skops_io.load(self.model_path, trusted=True)
+        self.model = skops_io.load(self.model_path, trusted=self.trusted_types)
         return self.model
 
     def predict(self, X):
