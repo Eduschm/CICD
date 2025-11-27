@@ -142,6 +142,9 @@ if __name__ == "__main__":
     # create a simple test dataset and provide a fallback model if loading fails
     from sklearn.datasets import make_classification
     from sklearn.dummy import DummyClassifier
+    import warnings 
+
+    warnings.filterwarnings("ignore")
 
     X_test, y_test = make_classification(
         n_samples=200,
