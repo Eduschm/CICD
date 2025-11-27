@@ -1,80 +1,37 @@
-name: Continuous Integration (CI)
+name: Publish Model Metrics
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
-  ci_build_and_test:
+  publish-metrics:
     runs-on: ubuntu-latest
-    
-    permissions:
-      contents: write
-      pull-requests: write
 
     steps:
-    - name: 1. Checkout Repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0 
-        
-    - name: 2. Setup Python Environment
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        
-    - name: 3. Install Dependencies
-      run: make install
+      - uses: actions/checkout@v4
 
+      - uses: iterative/setup-cml@v2
 
-    - name: 4. Run Training and Evaluation
-      run: make train
-      
-    - name: 5. Check Artifacts Exist
-      run: |
-        echo "Verifying if model and metrics files were created..."
-        test -f models/model.pkl || { echo "Error: models/model.pkl not found!"; exit 1; }
-        test -f results/metrics.json || { echo "Error: results/metrics.json not found!"; exit 1; }
-        echo "Artifacts verified."
+      - name: Install jq
+        run: sudo apt-get install -y jq
 
+      - name: Generate Report
+        run: |
+          echo "## CI Run Report" >> report.md
+          echo "Accuracy: $(jq -r '.Score.Accuracy' results/metrics.json)" >> report.md
+          echo "Precision: $(jq -r '.Score.Precision' results/metrics.json)" >> report.md
+          echo "Recall: $(jq -r '.Score.Recall' results/metrics.json)" >> report.md
+          echo "F1-Score: $(jq -r '.Score[\"F1-Score\"]' results/metrics.json)" >> report.md
+          echo "ROC-AUC: $(jq -r '.Score[\"ROC-AUC\"]' results/metrics.json)" >> report.md
+          echo "*New model artifact created and tested.*" >> report.md
 
-    - name: 6. Generate Metrics Report
-      run: |
-        # Check if jq is installed, install if not
-        if ! command -v jq &> /dev/null; then
-          sudo apt-get update && sudo apt-get install -y jq
-        fi
-        
-        # Read metrics from the detailed classification report
-        ACCURACY=$(cat results/metrics.json | jq -r '.accuracy.precision')
-        F1_SCORE=$(cat results/metrics.json | jq -r '."weighted avg"."f1-score"')
-        
-        # Format the markdown report
-        cat << EOF > report.md
-        ## 📊 CI Model Run Report
-        
-        | Metric | Value |
-        | :--- | :--- |
-        | Overall Accuracy | \`$ACCURACY\` |
-        | Weighted F1-Score | \`$F1_SCORE\` |
-        
-        *This model passed the functional tests and generated new metrics.*
-        EOF
-
-    - name: 7. Publish Report to PR/Commit
-      uses: actions/github-script@v6
-      with:
-        script: |
-          const fs = require('fs');
-          const report = fs.readFileSync('report.md', 'utf8');
-          
-          if (context.payload.pull_request) {
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: report
-            });
-          }
+      - name: Publish Report
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cml comment create report.md
