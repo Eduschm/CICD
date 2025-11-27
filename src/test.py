@@ -138,6 +138,7 @@ class ModelEvaluator:
 
 
 
+
 if __name__ == "__main__":
     # create a simple test dataset and provide a fallback model if loading fails
     from sklearn.datasets import make_classification
@@ -156,6 +157,12 @@ if __name__ == "__main__":
     )
 
     evaluator = ModelEvaluator("models/model.skops")
+    metrics = evaluator.evaluate(X_test, y_test, plot_cm=True, normalize_cm=False)
+    print(metrics.to_string())
+
+    # ensure the results directory exists before writing
+    os.makedirs("results", exist_ok=True)
+    metrics.to_json("results/metrics.json")
     try:
         evaluator.load_model()
     except Exception:
@@ -164,9 +171,4 @@ if __name__ == "__main__":
         dummy.fit(X_test, y_test)
         evaluator.model = dummy
 
-    metrics = evaluator.evaluate(X_test, y_test, plot_cm=True, normalize_cm=False)
-    print(metrics.to_string())
 
-    # ensure the results directory exists before writing
-    os.makedirs("results", exist_ok=True)
-    metrics.to_json("results/metrics.json")
