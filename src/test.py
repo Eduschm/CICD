@@ -41,11 +41,17 @@ class ModelEvaluator:
         self.y_proba: Optional[np.ndarray] = None
         self.metrics_df: Optional[pd.DataFrame] = None
         self.trusted_types = [
-    "lightgbm.sklearn.LGBMClassifier",
-    "xgboost.sklearn.XGBClassifier",
-    "imblearn.pipeline.Pipeline",
-    "imblearn.over_sampling._smote.base.SMOTE",
-]
+            "lightgbm.sklearn.LGBMClassifier",
+            "xgboost.sklearn.XGBClassifier",
+            "imblearn.pipeline.Pipeline",
+            "imblearn.over_sampling._smote.base.SMOTE",
+            'collections.OrderedDict', 
+            'lightgbm.basic.Booster', 
+            'numpy.dtype', 
+            'scipy.sparse._csr.csr_matrix', 
+            'sklearn.utils._bunch.Bunch', 
+            'xgboost.core.Booster'
+        ]
 
     def load_model(self):
         if not os.path.exists(self.model_path):
