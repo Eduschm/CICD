@@ -1,5 +1,7 @@
 import os
 import json
+import ast
+import argparse
 import pandas as pd
 from typing import Dict, Any, Optional
 
@@ -18,7 +20,6 @@ from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import Pipeline as ImbPipeline
 
 import skops.io as skio
-import joblib
 
 
 class ChurnTrainer:
@@ -72,6 +73,9 @@ class ChurnTrainer:
         self.best_params: Dict[str, Dict[str, Any]] = {}
         self.voting_classifier = None
         self.voting_threshold = None
+
+        # loaded saved params (for --quick)
+        self.saved_best_params: Dict[str, Dict[str, str]] = {}
 
     # Preprocessing
 
@@ -200,6 +204,53 @@ class ChurnTrainer:
         self.best_params[name] = {k: str(v) for k, v in grid.best_params_.items()}
         return grid
 
+    # Helper to parse saved param string back to python value
+    def _parse_param_value(self, s: str):
+        if s is None:
+            return None
+        if isinstance(s, (int, float, bool, dict, list)):
+            return s
+        # explicit None
+        if s == "None":
+            return None
+        # try JSON
+        try:
+            return json.loads(s)
+        except Exception:
+            pass
+        # try ast
+        try:
+            return ast.literal_eval(s)
+        except Exception:
+            pass
+        # fallback to original string
+        return s
+
+    def load_saved_params(self, path: Optional[str] = None):
+        path = path or os.path.join(self.results_dir, "best_params.json")
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Saved params not found at {path}")
+        with open(path, "r") as f:
+            self.saved_best_params = json.load(f)
+        return self.saved_best_params
+
+    def _apply_saved_params_and_fit(self, name: str):
+        """
+        Apply saved params (from self.saved_best_params[name]) to the pipeline,
+        fit it once on training data (no CV), and store in self.best_models.
+        """
+        if name not in self.saved_best_params:
+            raise ValueError(f"No saved params for model '{name}' in loaded best_params.json")
+        pipeline = self.pipelines[name]
+        raw_params = self.saved_best_params[name]
+        # convert string values back to proper types
+        params = {k: self._parse_param_value(v) for k, v in raw_params.items()}
+        pipeline.set_params(**params)
+        pipeline.fit(self.X_train, self.y_train)
+        self.best_models[name] = pipeline
+        # keep the loaded (string) representation as best_params
+        self.best_params[name] = raw_params
+        return pipeline
 
     # Evaluation
 
@@ -252,50 +303,39 @@ class ChurnTrainer:
         print(f"Decision Tree deployment model saved to: {path}")
         return path
 
-    def save_xgb_model(
-        self,
-        model_filename: str = "model_xgb.json",
-        preprocessor_filename: str = "preprocessor_xgb.skops",
-    ):
-        """
-        Save XGBoost model in its native format + preprocessor separately via skops.
-        This avoids putting XGBoost inside skops (which causes 'untrusted types' errors).
-        """
+    def save_xgb_model(self, filename: str = "model_xgb.skops"):
+    
         preprocessor, classifier = self._get_fitted_components("xgb")
 
-        # Save preprocessor (sklearn only, safe)
-        preproc_path = os.path.join(self.model_dir, preprocessor_filename)
-        skio.dump(preprocessor, preproc_path)
+        # Create deployment pipeline (no SMOTE)
+        deployment_pipeline = Pipeline(
+            [
+                ("preprocessor", preprocessor),
+                ("classifier", classifier),
+            ]
+        )
 
-        # Save XGBoost model nativo
-        model_path = os.path.join(self.model_dir, model_filename)
-        classifier.save_model(model_path)
+        path = os.path.join(self.model_dir, filename)
+        skio.dump(deployment_pipeline, path)
+        print(f"XGBoost deployment model saved to: {path}")
+        return path
 
-        print(f"XGBoost preprocessor saved to: {preproc_path}")
-        print(f"XGBoost model saved to: {model_path}")
-        return {"preprocessor": preproc_path, "model": model_path}
+    def save_lgbm_model(self, filename: str = "model_lgbm.skops"):
 
-    def save_lgbm_model(
-        self,
-        model_filename: str = "model_lgbm.txt",
-        preprocessor_filename: str = "preprocessor_lgbm.skops",
-    ):
-        """
-        Save LightGBM model in its native format + preprocessor separately via skops.
-        """
         preprocessor, classifier = self._get_fitted_components("lgbm")
 
-        # Save preprocessor
-        preproc_path = os.path.join(self.model_dir, preprocessor_filename)
-        skio.dump(preprocessor, preproc_path)
+        # Create deployment pipeline (no SMOTE)
+        deployment_pipeline = Pipeline(
+            [
+                ("preprocessor", preprocessor),
+                ("classifier", classifier),
+            ]
+        )
 
-        # Save LightGBM model nativo
-        model_path = os.path.join(self.model_dir, model_filename)
-        classifier.booster_.save_model(model_path)
-
-        print(f"LightGBM preprocessor saved to: {preproc_path}")
-        print(f"LightGBM model saved to: {model_path}")
-        return {"preprocessor": preproc_path, "model": model_path}
+        path = os.path.join(self.model_dir, filename)
+        skio.dump(deployment_pipeline, path)
+        print(f"LightGBM deployment model saved to: {path}")
+        return path
 
     def save_all_params(self):
         path = os.path.join(self.results_dir, "best_params.json")
@@ -370,11 +410,7 @@ class ChurnTrainer:
         # Save voting classifier as the preferred model
         self.save_voting_classifier()
 
-    def save_voting_classifier(self, filename: str = "voting_model.pkl"):
-        """
-        Save the voting classifier using joblib (not skops),
-        because it contains XGBoost, LightGBM and ImbPipelines.
-        """
+    def save_voting_classifier(self, filename: str = "model.skops"):
         if self.voting_classifier is None:
             raise ValueError(
                 "Voting classifier has not been built yet. "
@@ -382,7 +418,7 @@ class ChurnTrainer:
             )
 
         path = os.path.join(self.model_dir, filename)
-        joblib.dump(self.voting_classifier, path)
+        skio.dump(self.voting_classifier, path)
         print(f"\nPreferred model (Voting Classifier) saved to: {path}")
 
         # Also save the threshold
@@ -403,18 +439,26 @@ class ChurnTrainer:
         train_dt: bool = True,
         build_voting: bool = True,
         max_fpr: float = 0.1,
+        quick: bool = False,
     ):
         # prepare splits
         self.split()
+
+        # if quick, load saved best params
+        if quick:
+            self.load_saved_params()
 
         if train_xgb:
             print("\n" + "=" * 60)
             print("Training XGBoost...")
             print("=" * 60)
-            _ = self._run_grid_search(
-                "xgb",
-                scoring=["recall", "roc_auc", "f1", "accuracy", "precision"],
-            )
+            if quick:
+                _ = self._apply_saved_params_and_fit("xgb")
+            else:
+                _ = self._run_grid_search(
+                    "xgb",
+                    scoring=["recall", "roc_auc", "f1", "accuracy", "precision"],
+                )
             self.evaluate("xgb")
             self.save_xgb_model()
 
@@ -422,9 +466,12 @@ class ChurnTrainer:
             print("\n" + "=" * 60)
             print("Training Decision Tree...")
             print("=" * 60)
-            _ = self._run_grid_search(
-                "dt", scoring=["recall", "roc_auc", "f1"]
-            )
+            if quick:
+                _ = self._apply_saved_params_and_fit("dt")
+            else:
+                _ = self._run_grid_search(
+                    "dt", scoring=["recall", "roc_auc", "f1"]
+                )
             self.evaluate("dt")
             self.save_dt_model()
 
@@ -432,9 +479,12 @@ class ChurnTrainer:
             print("\n" + "=" * 60)
             print("Training LightGBM...")
             print("=" * 60)
-            _ = self._run_grid_search(
-                "lgbm", scoring=["recall", "roc_auc", "f1"]
-            )
+            if quick:
+                _ = self._apply_saved_params_and_fit("lgbm")
+            else:
+                _ = self._run_grid_search(
+                    "lgbm", scoring=["recall", "roc_auc", "f1"]
+                )
             self.evaluate("lgbm")
             self.save_lgbm_model()
 
@@ -452,3 +502,16 @@ class ChurnTrainer:
         print("\nTraining complete!")
         print(f"\n{'=' * 60}")
         print(f"{'=' * 60}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train churn models")
+    parser.add_argument("--data", type=str, default="data/churn.csv", help="path to CSV dataset")
+    parser.add_argument("--quick", action="store_true", help="Use saved best params from results/best_params.json to fit pipelines (no CV)")
+    parser.add_argument("--model-dir", type=str, default="models")
+    parser.add_argument("--results-dir", type=str, default="results")
+    args = parser.parse_args()
+
+    df = pd.read_csv(args.data)
+    trainer = ChurnTrainer(df, model_dir=args.model_dir, results_dir=args.results_dir)
+    trainer.run_all(train_xgb=True, train_lgbm=True, train_dt=True, build_voting=True, quick=args.quick)
