@@ -20,7 +20,7 @@ from sklearn.metrics import (
 try:
     from skops import io as skops_io
 except Exception:
-    skops_io = None  # handled later
+    skops_io = None  
 
 
 class ModelEvaluator:
@@ -46,7 +46,7 @@ class ModelEvaluator:
             raise FileNotFoundError(f"Model file not found: {self.model_path}")
         if skops_io is None:
             raise RuntimeError("skops.io not available. Install scikit-learn-skbio/skops.")
-        self.model = skops_io.load(self.model_path)
+        self.model = skops_io.load(self.model_path, trusted=True)
         return self.model
 
     def predict(self, X):
