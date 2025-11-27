@@ -32,6 +32,7 @@ class ChurnTrainer:
         test_size: float = 0.2,
         model_dir: str = "models",
         results_dir: str = "results",
+        config_dir: str = "config",
     ):
         self.df = df.copy()
         self.target_col = target_col
@@ -39,6 +40,7 @@ class ChurnTrainer:
         self.test_size = test_size
         self.model_dir = model_dir
         self.results_dir = results_dir
+        self.config_dir = config_dir
 
         os.makedirs(self.model_dir, exist_ok=True)
         os.makedirs(self.results_dir, exist_ok=True)
@@ -338,7 +340,7 @@ class ChurnTrainer:
         return path
 
     def save_all_params(self):
-        path = os.path.join(self.results_dir, "best_params.json")
+        path = os.path.join(self.config_dir, "best_params.json")
         with open(path, "w") as f:
             json.dump(self.best_params, f, indent=2)
         return path
@@ -507,7 +509,7 @@ class ChurnTrainer:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train churn models")
     parser.add_argument("--data", type=str, default="data/churn.csv", help="path to CSV dataset")
-    parser.add_argument("--quick", action="store_true", help="Use saved best params from results/best_params.json to fit pipelines (no CV)")
+    parser.add_argument("--quick", action="store_true", help="Use saved best params from cofnig/best_params.json to fit pipelines (no CV)")
     parser.add_argument("--model-dir", type=str, default="models")
     parser.add_argument("--results-dir", type=str, default="results")
     args = parser.parse_args()
