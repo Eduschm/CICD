@@ -439,7 +439,7 @@ class ChurnTrainer:
         train_dt: bool = True,
         build_voting: bool = True,
         max_fpr: float = 0.1,
-        quick: bool = False,
+        quick: bool = True,
     ):
         # prepare splits
         self.split()
