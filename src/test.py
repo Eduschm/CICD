@@ -134,6 +134,7 @@ class ModelEvaluator:
         if plot_cm:
             self.plot_confusion_matrix(y, normalize=normalize_cm)
             plt.show()
+        metrics.to_json("metrics.json")
         return metrics
 
 
@@ -157,12 +158,7 @@ if __name__ == "__main__":
     )
 
     evaluator = ModelEvaluator("models/model.skops")
-    metrics = evaluator.evaluate(X_test, y_test, plot_cm=True, normalize_cm=False)
-    print(metrics.to_string())
-
-    # ensure the results directory exists before writing
-    os.makedirs("results", exist_ok=True)
-    metrics.to_json("results/metrics.json")
+  
     try:
         evaluator.load_model()
     except Exception:
